@@ -1,0 +1,217 @@
+<?php
+include ('../../../inc/includes.php');
+
+Session::checkLoginUser();
+Html::header(__('Dashboard de Horas'), '', 'tools', 'dashboard');
+
+$user_id = Session::getLoginUserID();
+
+$date_from = $_POST['date_from'] ?? date('Y-m-01');
+$date_to   = $_POST['date_to'] ?? date('Y-m-t');
+
+// MUDAR AQUI: PluginDashboardDashboard -> PluginRelatoriotecnicosRelatoriotecnicos
+$hours = PluginRelatoriotecnicosRelatoriotecnicos::getUserHours($user_id, $date_from, $date_to);
+$monthly_stats = PluginRelatoriotecnicosRelatoriotecnicos::getMonthlyStats($user_id, $date_from, $date_to);
+?>
+
+<style>
+    .dashboard-container {
+        max-width: 1200px;
+        margin: 30px auto;
+        background: #fff;
+        padding: 30px;
+        border-radius: 12px;
+        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+    }
+
+    h2 {
+        font-size: 1.8rem;
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 25px;
+        text-align: center;
+    }
+
+    .stats-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 20px;
+        margin-bottom: 30px;
+    }
+
+    .stat-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 25px;
+        border-radius: 10px;
+        text-align: center;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+
+    .stat-card h3 {
+        margin: 0 0 10px 0;
+        font-size: 1rem;
+        opacity: 0.9;
+    }
+
+    .stat-card .value {
+        font-size: 2rem;
+        font-weight: bold;
+        margin: 0;
+    }
+
+    .stat-card.secondary {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    }
+
+    .stat-card.success {
+        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    }
+
+    form {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 15px;
+        margin-bottom: 25px;
+        background: #f8f9fa;
+        padding: 20px;
+        border-radius: 8px;
+    }
+
+    input[type="date"] {
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        padding: 8px 12px;
+    }
+
+    input[type="submit"] {
+        background: #007bff;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        padding: 8px 18px;
+        cursor: pointer;
+        transition: background 0.2s ease;
+    }
+
+    input[type="submit"]:hover {
+        background: #0056b3;
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+    }
+
+    th, td {
+        padding: 12px;
+        text-align: left;
+        border-bottom: 1px solid #eee;
+    }
+
+    th {
+        background-color: #f8f9fa;
+        font-weight: 600;
+    }
+
+    tr:hover {
+        background-color: #f2f8ff;
+    }
+
+    .chart-container {
+        margin: 30px 0;
+        padding: 20px;
+        background: #f8f9fa;
+        border-radius: 8px;
+    }
+
+    @media (max-width: 768px) {
+        .dashboard-container {
+            padding: 20px;
+        }
+        form {
+            flex-direction: column;
+            align-items: stretch;
+        }
+        input[type="submit"] {
+            width: 100%;
+        }
+        .stats-cards {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+
+<div class="dashboard-container">
+    <h2>⏱️ Dashboard de Horas Trabalhadas</h2>
+
+    <!-- Cards de Estatísticas -->
+    <div class="stats-cards">
+        <div class="stat-card">
+            <h3>Total de Horas no Período</h3>
+            <p class="value"><?= number_format($monthly_stats['total_hours'], 2) ?>h</p>
+        </div>
+        <div class="stat-card secondary">
+            <h3>Média Diária</h3>
+            <p class="value"><?= number_format($monthly_stats['daily_average'], 2) ?>h</p>
+        </div>
+        <div class="stat-card success">
+            <h3>Total de Tickets</h3>
+            <p class="value"><?= $monthly_stats['total_tickets'] ?></p>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);">
+            <h3>Total de Tarefas</h3>
+            <p class="value"><?= $monthly_stats['total_tarefas'] ?></p>
+        </div>
+    </div>
+
+    <!-- Filtro -->
+    <form method="post" action="">
+        <input type="hidden" name="_glpi_csrf_token" value="<?= Session::getNewCSRFToken() ?>">
+        <label>De:
+            <input type="date" name="date_from" value="<?= Html::cleanInputText($date_from) ?>">
+        </label>
+        <label>Até:
+            <input type="date" name="date_to" value="<?= Html::cleanInputText($date_to) ?>">
+        </label>
+        <input type="submit" value="Filtrar">
+    </form>
+
+    <!-- Tabela de Detalhes -->
+    <?php if (!empty($hours)) : ?>
+        <div class="table-responsive">
+            <table class="table table-striped table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>ID</th>  <th>Data</th>
+                        <th>Ticket</th>
+                        <th>Tempo Total (horas)</th>
+                    </tr>
+                </thead>
+<tbody>
+    <?php foreach ($hours as $hour): ?>
+        <tr>
+            <td><?= Html::clean($hour['ticket_id']) ?></td>
+            <td><?= Html::clean($hour['task_date']) ?></td>
+            
+            <td>
+    <a href="<?= $CFG_GLPI['url_base'] ?>/front/ticket.form.php?id=<?= $hour['ticket_id'] ?>">
+        <?= Html::clean($hour['ticket_name']) ?>
+    </a>
+            </td>
+            <td><?= number_format(round($hour['total_time'] / 3600, 2), 2) ?>h</td>
+        </tr>
+    <?php endforeach; ?>
+</tbody>
+            </table>
+        </div>
+    <?php else : ?>
+        <p style="text-align:center; color:#888;">Nenhum registro encontrado para o período selecionado.</p>
+    <?php endif; ?>
+</div>
+
+<?php
+Html::footer();
+?>
