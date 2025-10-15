@@ -86,37 +86,30 @@ class PluginRelatoriotecnicosRelatoriotecnicos extends CommonGLPI {
 static function getTechnicians() {
     global $DB;
 
-    $profile_id = 6; // Technician
+    $ids_permitidos = [9, 4, 7, 10]; // IDs que você quer liberar
+    $ids_str = implode(",", $ids_permitidos);
 
     $query = "
-        SELECT u.id,
-               TRIM(CONCAT(
-                   COALESCE(u.firstname, ''), 
-                   ' ', 
-                   COALESCE(u.realname, '')
-               )) AS fullname,
-               u.name AS login
-        FROM glpi_users AS u
-        INNER JOIN glpi_profiles_users AS pu ON u.id = pu.users_id
-        WHERE pu.profiles_id = $profile_id 
+        SELECT u.id, 
+               CONCAT(COALESCE(u.firstname,''), ' ', COALESCE(u.realname,'')) AS fullname
+        FROM glpi_users u
+        INNER JOIN glpi_profiles_users pu ON u.id = pu.users_id
+        WHERE pu.profiles_id = 6
           AND u.is_active = 1
-        ORDER BY fullname, u.name
+          AND u.id IN ($ids_str)
+        ORDER BY fullname ASC
     ";
 
     $result = $DB->query($query);
-    $technicians = [];
+    $users = [];
 
-    if ($result && $DB->numrows($result) > 0) {
-        while ($data = $DB->fetchAssoc($result)) {
-            // Se fullname estiver vazio, usa o login
-            if (empty($data['fullname'])) {
-                $data['fullname'] = $data['login'];
-            }
-            $technicians[] = $data;
-        }
+    while ($row = $DB->fetch_assoc($result)) {
+        $users[] = $row;
     }
-    return $technicians;
+
+    return $users;
 }
+
 
 
 
