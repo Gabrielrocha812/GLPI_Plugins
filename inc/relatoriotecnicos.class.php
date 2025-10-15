@@ -80,6 +80,47 @@ class PluginRelatoriotecnicosRelatoriotecnicos extends CommonGLPI {
     }
 
     /**
+     * Obtém uma lista de usuários com perfil de técnico.
+     * Altere 'Técnico' se o nome do seu perfil for diferente.
+     */
+static function getTechnicians() {
+    global $DB;
+
+    $profile_id = 6; // Technician
+
+    $query = "
+        SELECT u.id,
+               TRIM(CONCAT(
+                   COALESCE(u.firstname, ''), 
+                   ' ', 
+                   COALESCE(u.realname, '')
+               )) AS fullname,
+               u.name AS login
+        FROM glpi_users AS u
+        INNER JOIN glpi_profiles_users AS pu ON u.id = pu.users_id
+        WHERE pu.profiles_id = $profile_id 
+          AND u.is_active = 1
+        ORDER BY fullname, u.name
+    ";
+
+    $result = $DB->query($query);
+    $technicians = [];
+
+    if ($result && $DB->numrows($result) > 0) {
+        while ($data = $DB->fetchAssoc($result)) {
+            // Se fullname estiver vazio, usa o login
+            if (empty($data['fullname'])) {
+                $data['fullname'] = $data['login'];
+            }
+            $technicians[] = $data;
+        }
+    }
+    return $technicians;
+}
+
+
+
+    /**
      * Obtém estatísticas mensais
      */
 static function getMonthlyStats($user_id, $date_from = null, $date_to = null) {

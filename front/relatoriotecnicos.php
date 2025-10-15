@@ -4,14 +4,37 @@ include ('../../../inc/includes.php');
 Session::checkLoginUser();
 Html::header(__('Dashboard de Horas'), '', 'tools', 'dashboard');
 
-$user_id = Session::getLoginUserID();
+// --- INÍCIO DAS MODIFICAÇÕES ---
+
+// 1. Verificar se o usuário logado tem perfil de Super-Admin
+// IMPORTANTE: Altere 'Super-Admin' para o nome exato do seu perfil de super administrador.
+$is_super_admin = ($_SESSION['glpiactiveprofile']['name'] == 'Super-Admin');
+
+// 2. Determinar qual ID de usuário deve ser usado para a consulta
+$logged_user_id = Session::getLoginUserID(); // ID do usuário logado
+$user_id_to_query = $logged_user_id;         // Por padrão, mostra os dados do próprio usuário
+
+// Se for Super-Admin e tiver selecionado um técnico no filtro, usa o ID selecionado
+if ($is_super_admin && isset($_POST['technician_id']) && $_POST['technician_id'] > 0) {
+    $user_id_to_query = intval($_POST['technician_id']);
+}
+
+// 3. Se for Super-Admin, busca a lista de técnicos para o dropdown
+$technicians = [];
+if ($is_super_admin) {
+    $technicians = PluginRelatoriotecnicosRelatoriotecnicos::getTechnicians();
+}
+
+// O resto do código continua, mas usando a variável $user_id_to_query
 
 $date_from = $_POST['date_from'] ?? date('Y-m-01');
 $date_to   = $_POST['date_to'] ?? date('Y-m-t');
 
-// MUDAR AQUI: PluginDashboardDashboard -> PluginRelatoriotecnicosRelatoriotecnicos
-$hours = PluginRelatoriotecnicosRelatoriotecnicos::getUserHours($user_id, $date_from, $date_to);
-$monthly_stats = PluginRelatoriotecnicosRelatoriotecnicos::getMonthlyStats($user_id, $date_from, $date_to);
+// MUDANÇA AQUI: passe a variável $user_id_to_query para as funções
+$hours = PluginRelatoriotecnicosRelatoriotecnicos::getUserHours($user_id_to_query, $date_from, $date_to);
+$monthly_stats = PluginRelatoriotecnicosRelatoriotecnicos::getMonthlyStats($user_id_to_query, $date_from, $date_to);
+
+// --- FIM DAS MODIFICAÇÕES ---
 ?>
 
 <style>
@@ -40,7 +63,7 @@ $monthly_stats = PluginRelatoriotecnicosRelatoriotecnicos::getMonthlyStats($user
     }
 
     .stat-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: #182836;
         color: white;
         padding: 25px;
         border-radius: 10px;
@@ -61,11 +84,12 @@ $monthly_stats = PluginRelatoriotecnicosRelatoriotecnicos::getMonthlyStats($user
     }
 
     .stat-card.secondary {
-        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        background: #D75A31;
     }
 
     .stat-card.success {
-        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        background: #fff;
+        color: #182836;
     }
 
     form {
@@ -161,23 +185,39 @@ $monthly_stats = PluginRelatoriotecnicosRelatoriotecnicos::getMonthlyStats($user
             <h3>Total de Tickets</h3>
             <p class="value"><?= $monthly_stats['total_tickets'] ?></p>
         </div>
-        <div class="stat-card" style="background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);">
+        <div class="stat-card" style="background: #FFF;
+    color: #D75A31;">
             <h3>Total de Tarefas</h3>
             <p class="value"><?= $monthly_stats['total_tarefas'] ?></p>
         </div>
     </div>
 
     <!-- Filtro -->
-    <form method="post" action="">
-        <input type="hidden" name="_glpi_csrf_token" value="<?= Session::getNewCSRFToken() ?>">
-        <label>De:
-            <input type="date" name="date_from" value="<?= Html::cleanInputText($date_from) ?>">
-        </label>
-        <label>Até:
-            <input type="date" name="date_to" value="<?= Html::cleanInputText($date_to) ?>">
-        </label>
-        <input type="submit" value="Filtrar">
-    </form>
+<form method="post" action="">
+    <input type="hidden" name="_glpi_csrf_token" value="<?= Session::getNewCSRFToken() ?>">
+
+    <?php if ($is_super_admin): ?>
+        <label for="technician_id">Técnico:</label>
+        <select name="technician_id" id="technician_id">
+            <option value="0">-- Selecione --</option>
+            <?php foreach ($technicians as $technician): ?>
+                <option value="<?= $technician['id'] ?>" <?= ($user_id_to_query == $technician['id']) ? 'selected' : '' ?>>
+                    <?= Html::clean($technician['fullname']) ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+    <?php endif; ?>
+
+    <label>De:
+        <input type="date" name="date_from" value="<?= Html::cleanInputText($date_from) ?>">
+    </label>
+
+    <label>Até:
+        <input type="date" name="date_to" value="<?= Html::cleanInputText($date_to) ?>">
+    </label>
+
+    <input type="submit" value="Filtrar">
+</form>
 
     <!-- Tabela de Detalhes -->
     <?php if (!empty($hours)) : ?>
@@ -194,14 +234,15 @@ $monthly_stats = PluginRelatoriotecnicosRelatoriotecnicos::getMonthlyStats($user
     <?php foreach ($hours as $hour): ?>
         <tr>
             <td><?= Html::clean($hour['ticket_id']) ?></td>
-            <td><?= Html::clean($hour['task_date']) ?></td>
-            
             <td>
-    <a href="<?= $CFG_GLPI['url_base'] ?>/front/ticket.form.php?id=<?= $hour['ticket_id'] ?>">
-        <?= Html::clean($hour['ticket_name']) ?>
-    </a>
+                <?= date("d/m/Y", strtotime($hour['task_date'])) ?>
             </td>
-            <td><?= number_format(round($hour['total_time'] / 3600, 2), 2) ?>h</td>
+            <td>
+                <a href="<?= $CFG_GLPI['url_base'] ?>/front/ticket.form.php?id=<?= $hour['ticket_id'] ?>">
+                    <?= Html::clean($hour['ticket_name']) ?>
+                </a>
+            </td>
+            <td><?= number_format(round($hour['total_time'] / 3600, 2), 2, ',', '.') ?>h</td>
         </tr>
     <?php endforeach; ?>
 </tbody>
