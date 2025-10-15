@@ -103,8 +103,10 @@ static function getTechnicians() {
     $result = $DB->query($query);
     $users = [];
 
-    while ($row = $DB->fetch_assoc($result)) {
-        $users[] = $row;
+    if ($result) { // Boa prática verificar se a query funcionou
+        while ($row = $DB->fetchAssoc($result)) { // AQUI ESTÁ A CORREÇÃO
+            $users[] = $row;
+        }
     }
 
     return $users;
