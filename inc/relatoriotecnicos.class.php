@@ -86,25 +86,29 @@ class PluginRelatoriotecnicosRelatoriotecnicos extends CommonGLPI {
 static function getTechnicians() {
     global $DB;
 
-    $ids_permitidos = [9, 4, 7, 10]; // IDs que você quer liberar
-    $ids_str = implode(",", $ids_permitidos);
+    // Lista dos IDs dos perfis que você quer incluir no relatório.
+    $profile_ids_permitidos = [4, 7, 9, 10];
+    
+    // Converte o array de IDs em uma string separada por vírgulas para a consulta SQL.
+    $profile_ids_str = implode(",", $profile_ids_permitidos);
 
     $query = "
-        SELECT u.id, 
+        SELECT DISTINCT -- Usar DISTINCT para garantir que cada usuário apareça apenas uma vez
+               u.id, 
                CONCAT(COALESCE(u.firstname,''), ' ', COALESCE(u.realname,'')) AS fullname
         FROM glpi_users u
         INNER JOIN glpi_profiles_users pu ON u.id = pu.users_id
-        WHERE pu.profiles_id = 6
-          AND u.is_active = 1
-          AND u.id IN ($ids_str)
+        WHERE u.is_active = 1
+          -- A MUDANÇA PRINCIPAL ESTÁ AQUI:
+          AND pu.profiles_id IN ($profile_ids_str)
         ORDER BY fullname ASC
     ";
 
     $result = $DB->query($query);
     $users = [];
 
-    if ($result) { // Boa prática verificar se a query funcionou
-        while ($row = $DB->fetchAssoc($result)) { // AQUI ESTÁ A CORREÇÃO
+    if ($result) {
+        while ($row = $DB->fetchAssoc($result)) {
             $users[] = $row;
         }
     }
