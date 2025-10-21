@@ -12,7 +12,7 @@ $is_super_admin = ($_SESSION['glpiactiveprofile']['name'] == 'Super-Admin');
 
 // 2. Determinar qual ID de usuário deve ser usado para a consulta
 $logged_user_id = Session::getLoginUserID(); // ID do usuário logado
-$user_id_to_query = $logged_user_id;         // Por padrão, mostra os dados do próprio usuário
+$user_id_to_query = $logged_user_id;        // Por padrão, mostra os dados do próprio usuário
 
 // Se for Super-Admin e tiver selecionado um técnico no filtro, usa o ID selecionado
 if ($is_super_admin && isset($_POST['technician_id']) && $_POST['technician_id'] > 0) {
@@ -35,6 +35,50 @@ $hours = PluginRelatoriotecnicosRelatoriotecnicos::getUserHours($user_id_to_quer
 $monthly_stats = PluginRelatoriotecnicosRelatoriotecnicos::getMonthlyStats($user_id_to_query, $date_from, $date_to);
 
 // --- FIM DAS MODIFICAÇÕES ---
+
+// --- CÁLCULO DE DIAS ÚTEIS PARA MÉDIA DIÁRIA ---
+
+/**
+ * Calcula o número de dias úteis (Seg-Sex) entre duas datas (inclusivo).
+ * @param string $startDate Data inicial (Y-m-d)
+ * @param string $endDate Data final (Y-m-d)
+ * @return int O número de dias úteis
+ */
+function getWorkingDays($startDate, $endDate) {
+    try {
+        $begin = new DateTime($startDate);
+        $end   = new DateTime($endDate);
+    } catch (Exception $e) {
+        return 0; // Retorna 0 em caso de data inválida
+    }
+
+    // Adiciona 1 dia ao final para que o DatePeriod inclua o último dia
+    $end = $end->modify('+1 day');
+    $interval = new DateInterval('P1D');
+    $dateRange = new DatePeriod($begin, $interval, $end);
+
+    $workingDays = 0;
+    foreach ($dateRange as $date) {
+        $dayOfWeek = $date->format('N'); // 'N' retorna 1 (Seg) a 7 (Dom)
+        if ($dayOfWeek < 6) { // Conta apenas de 1 (Seg) a 5 (Sex)
+            $workingDays++;
+        }
+    }
+    return $workingDays;
+}
+
+// 1. Calcula o total de dias úteis no período selecionado
+$totalWorkingDays = getWorkingDays($date_from, $date_to);
+
+// 2. Recalcula a média diária com base nos dias úteis
+$daily_average_working_days = 0; // Define um valor padrão
+if ($totalWorkingDays > 0) {
+    // Usa o total de horas já buscado pela função original
+    $daily_average_working_days = $monthly_stats['total_hours'] / $totalWorkingDays;
+}
+
+// --- FIM DO CÁLCULO DE DIAS ÚTEIS ---
+
 ?>
 
 <style>
@@ -171,15 +215,14 @@ $monthly_stats = PluginRelatoriotecnicosRelatoriotecnicos::getMonthlyStats($user
 <div class="dashboard-container">
     <h2>⏱️ Dashboard de Horas Trabalhadas</h2>
 
-    <!-- Cards de Estatísticas -->
     <div class="stats-cards">
         <div class="stat-card">
             <h3>Total de Horas no Período</h3>
             <p class="value"><?= number_format($monthly_stats['total_hours'], 2) ?>h</p>
         </div>
         <div class="stat-card secondary">
-            <h3>Média Diária</h3>
-            <p class="value"><?= number_format($monthly_stats['daily_average'], 2) ?>h</p>
+            <h3>Média Diária (Dias Úteis)</h3>
+            <p class="value"><?= number_format($daily_average_working_days, 2) ?>h</p>
         </div>
         <div class="stat-card success">
             <h3>Total de Tickets</h3>
@@ -192,8 +235,7 @@ $monthly_stats = PluginRelatoriotecnicosRelatoriotecnicos::getMonthlyStats($user
         </div>
     </div>
 
-    <!-- Filtro -->
-<form method="post" action="">
+    <form method="post" action="">
     <input type="hidden" name="_glpi_csrf_token" value="<?= Session::getNewCSRFToken() ?>">
 
     <?php if ($is_super_admin): ?>
@@ -219,7 +261,6 @@ $monthly_stats = PluginRelatoriotecnicosRelatoriotecnicos::getMonthlyStats($user
     <input type="submit" value="Filtrar">
 </form>
 
-    <!-- Tabela de Detalhes -->
     <?php if (!empty($hours)) : ?>
         <div class="table-responsive">
             <table class="table table-striped table-hover align-middle">
