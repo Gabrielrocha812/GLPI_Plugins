@@ -4,33 +4,31 @@ include ('../../../inc/includes.php');
 Session::checkLoginUser();
 Html::header(__('Dashboard de Horas'), '', 'tools', 'dashboard');
 
-// --- INÍCIO DAS MODIFICAÇÕES ---
-
-// 1. Verificar perfil
+// --- PERFIL DO USUÁRIO / SUPER-ADMIN ---
 $is_super_admin = ($_SESSION['glpiactiveprofile']['name'] == 'Super-Admin');
 
-// 2. ID do usuário logado
-$logged_user_id = Session::getLoginUserID();
+$logged_user_id   = Session::getLoginUserID();
 $user_id_to_query = $logged_user_id;
 
-// Se for admin, permite escolher um técnico
 if ($is_super_admin && isset($_POST['technician_id']) && $_POST['technician_id'] > 0) {
     $user_id_to_query = intval($_POST['technician_id']);
 }
 
-// 3. Lista de técnicos
+// Lista de técnicos (para Super-Admin)
 $technicians = [];
 if ($is_super_admin) {
     $technicians = PluginRelatoriotecnicosRelatoriotecnicos::getTechnicians();
 }
 
+// Datas padrão: mês atual
 $date_from = $_POST['date_from'] ?? date('Y-m-01');
 $date_to   = $_POST['date_to'] ?? date('Y-m-t');
 
-$hours = PluginRelatoriotecnicosRelatoriotecnicos::getUserHours($user_id_to_query, $date_from, $date_to);
+// Busca dados
+$hours         = PluginRelatoriotecnicosRelatoriotecnicos::getUserHours($user_id_to_query, $date_from, $date_to);
 $monthly_stats = PluginRelatoriotecnicosRelatoriotecnicos::getMonthlyStats($user_id_to_query, $date_from, $date_to);
 
-// --- CÁLCULO DE DIAS ÚTEIS ---
+// --- DIAS ÚTEIS ---
 function getWorkingDays($startDate, $endDate) {
     try {
         $begin = new DateTime($startDate);
@@ -39,13 +37,15 @@ function getWorkingDays($startDate, $endDate) {
         return 0;
     }
 
+    // Inclui o último dia no intervalo
     $end = $end->modify('+1 day');
-    $interval = new DateInterval('P1D');
+    $interval  = new DateInterval('P1D');
     $dateRange = new DatePeriod($begin, $interval, $end);
 
     $workingDays = 0;
     foreach ($dateRange as $date) {
-        if ($date->format('N') < 6) {
+        $dayOfWeek = $date->format('N'); // 1 = Seg ... 7 = Dom
+        if ($dayOfWeek < 6) {
             $workingDays++;
         }
     }
@@ -54,15 +54,18 @@ function getWorkingDays($startDate, $endDate) {
 
 $totalWorkingDays = getWorkingDays($date_from, $date_to);
 
-// Converte horas totais (decimal) → segundos
-$total_hours_seconds = intval($monthly_stats['total_hours'] * 3600);
-
-// Média diária em segundos
-$daily_avg_seconds = ($totalWorkingDays > 0)
-    ? intval(($monthly_stats['total_hours'] / $totalWorkingDays) * 3600)
+// total_hours vem em HORAS decimais → convertemos para segundos
+$total_hours_seconds = isset($monthly_stats['total_hours'])
+    ? intval($monthly_stats['total_hours'] * 3600)
     : 0;
 
-// Função para converter segundos → HH:MM
+// média diária (em segundos) considerando somente dias úteis
+$daily_avg_seconds = 0;
+if ($totalWorkingDays > 0 && isset($monthly_stats['total_hours'])) {
+    $daily_avg_seconds = intval(($monthly_stats['total_hours'] / $totalWorkingDays) * 3600);
+}
+
+// Função para formatar segundos → "HHh MMm"
 function formatHours($seconds) {
     $h = floor($seconds / 3600);
     $m = floor(($seconds % 3600) / 60);
@@ -74,149 +77,253 @@ $formatted_daily_avg   = formatHours($daily_avg_seconds);
 
 ?>
 
-<style>
-    .dashboard-container {
-        max-width: 1200px;
-        margin: 30px auto;
-        background: #fff;
-        padding: 30px;
-        border-radius: 12px;
-        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+<!-- Tailwind CDN -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          brandDark:  '#182836',
+          brandAccent:'#D75A31'
+        }
+      }
     }
-    h2 {
-        font-size: 1.8rem;
-        text-align: center;
-        margin-bottom: 25px;
-        color: #333;
-    }
-    .stats-cards {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-        gap: 20px;
-        margin-bottom: 30px;
-    }
-    .stat-card {
-        background: #182836;
-        color: white;
-        padding: 25px;
-        border-radius: 10px;
-        text-align: center;
-    }
-    .stat-card.secondary { background: #D75A31; }
-    .stat-card.success { background: #fff; color: #182836; }
-    form {
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: center;
-        gap: 15px;
-        padding: 20px;
-        background: #f8f9fa;
-        border-radius: 8px;
-        margin-bottom: 25px;
-    }
-    table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-top: 10px;
-    }
-    th, td {
-        padding: 12px;
-        border-bottom: 1px solid #eee;
-    }
-    th { background: #f8f9fa; }
-    tr:hover { background: #f2f8ff; }
-</style>
+  }
+</script>
 
-<div class="dashboard-container">
+<div class="min-h-screen bg-slate-100/80 px-4 py-8">
+  <div class="max-w-6xl mx-auto space-y-6">
 
-    <h2>⏱️ Dashboard de Horas Trabalhadas</h2>
+    <!-- Cabeçalho -->
+    <header class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h1 class="text-2xl sm:text-3xl font-semibold text-slate-900 flex items-center gap-2">
+          <span class="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-brandDark text-white shadow-sm">
+            ⏱️
+          </span>
+          <span>Dashboard de Horas Trabalhadas</span>
+        </h1>
+        <p class="text-sm text-slate-500 mt-1">
+          Visão geral das horas registradas no período selecionado.
+        </p>
+      </div>
+      <div class="mt-2 sm:mt-0 text-xs text-slate-400">
+        Período atual: <?= Html::cleanInputText(date("d/m/Y", strtotime($date_from))) ?>
+        &nbsp;até&nbsp;
+        <?= Html::cleanInputText(date("d/m/Y", strtotime($date_to))) ?>
+      </div>
+    </header>
 
-    <div class="stats-cards">
-        <div class="stat-card">
-            <h3>Total de Horas no Período</h3>
-            <p class="value"><?= $formatted_total_hours ?></p>
+    <!-- Cards de estatísticas -->
+    <section class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+      <!-- Total de Horas -->
+      <div class="bg-brandDark text-white rounded-2xl p-5 shadow-md shadow-slate-900/10 
+                  hover:shadow-xl hover:-translate-y-1 transition duration-200">
+        <div class="flex items-start justify-between gap-2">
+          <div>
+            <p class="text-xs uppercase tracking-wide text-slate-200/70">
+              Total de horas no período
+            </p>
+            <p class="mt-2 text-2xl font-bold">
+              <?= $formatted_total_hours ?>
+            </p>
+          </div>
+          <div class="h-10 w-10 rounded-2xl bg-white/10 flex items-center justify-center">
+            <span class="text-lg">🧮</span>
+          </div>
         </div>
+      </div>
 
-        <div class="stat-card secondary">
-            <h3>Média Diária (Dias Úteis)</h3>
-            <p class="value"><?= $formatted_daily_avg ?></p>
+      <!-- Média Diária (Dias Úteis) -->
+      <div class="bg-brandAccent text-white rounded-2xl p-5 shadow-md shadow-brandAccent/30 
+                  hover:shadow-xl hover:-translate-y-1 transition duration-200">
+        <div class="flex items-start justify-between gap-2">
+          <div>
+            <p class="text-xs uppercase tracking-wide text-orange-100/80">
+              Média diária (dias úteis)
+            </p>
+            <p class="mt-2 text-2xl font-bold">
+              <?= $formatted_daily_avg ?>
+            </p>
+          </div>
+          <div class="h-10 w-10 rounded-2xl bg-white/10 flex items-center justify-center">
+            <span class="text-lg">📆</span>
+          </div>
         </div>
+      </div>
 
-        <div class="stat-card success">
-            <h3>Total de Tickets</h3>
-            <p class="value"><?= $monthly_stats['total_tickets'] ?></p>
+      <!-- Total de Tickets -->
+      <div class="bg-white rounded-2xl p-5 shadow-md shadow-slate-900/5 
+                  border border-slate-200 hover:shadow-lg hover:-translate-y-1 
+                  transition duration-200">
+        <div class="flex items-start justify-between gap-2">
+          <div>
+            <p class="text-xs uppercase tracking-wide text-slate-500">
+              Total de tickets
+            </p>
+            <p class="mt-2 text-2xl font-bold text-brandDark">
+              <?= (int)$monthly_stats['total_tickets'] ?>
+            </p>
+          </div>
+          <div class="h-10 w-10 rounded-2xl bg-slate-100 flex items-center justify-center">
+            <span class="text-lg text-brandDark">🎫</span>
+          </div>
         </div>
+      </div>
 
-        <div class="stat-card" style="background:#FFF;color:#D75A31;">
-            <h3>Total de Tarefas</h3>
-            <p class="value"><?= $monthly_stats['total_tarefas'] ?></p>
+      <!-- Total de Tarefas -->
+      <div class="bg-white rounded-2xl p-5 shadow-md shadow-slate-900/5
+                  border border-brandAccent/50 hover:shadow-lg hover:-translate-y-1 
+                  transition duration-200">
+        <div class="flex items-start justify-between gap-2">
+          <div>
+            <p class="text-xs uppercase tracking-wide text-brandAccent">
+              Total de tarefas
+            </p>
+            <p class="mt-2 text-2xl font-bold text-brandAccent">
+              <?= (int)$monthly_stats['total_tarefas'] ?>
+            </p>
+          </div>
+          <div class="h-10 w-10 rounded-2xl bg-brandAccent/10 flex items-center justify-center">
+            <span class="text-lg text-brandAccent">✅</span>
+          </div>
         </div>
-    </div>
+      </div>
+    </section>
 
-    <form method="post">
+    <!-- Filtros -->
+    <section class="bg-white rounded-2xl shadow-md shadow-slate-900/5 border border-slate-200 p-4 sm:p-5">
+      <form method="post" class="flex flex-col gap-4 md:flex-row md:items-end md:flex-wrap">
         <input type="hidden" name="_glpi_csrf_token" value="<?= Session::getNewCSRFToken() ?>">
 
         <?php if ($is_super_admin): ?>
-        <label>Técnico:</label>
-        <select name="technician_id">
-            <option value="0">-- Selecione --</option>
-            <?php foreach ($technicians as $technician): ?>
+          <div class="flex flex-col">
+            <label for="technician_id" class="text-xs font-medium text-slate-600 mb-1">
+              Técnico
+            </label>
+            <select
+              name="technician_id"
+              id="technician_id"
+              class="rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-sm 
+                     text-slate-700 focus:outline-none focus:ring-2 focus:ring-brandAccent/60 
+                     focus:border-brandAccent transition">
+              <option value="0">-- Selecione --</option>
+              <?php foreach ($technicians as $technician): ?>
                 <option value="<?= $technician['id'] ?>" <?= ($user_id_to_query == $technician['id']) ? 'selected' : '' ?>>
-                    <?= Html::clean($technician['fullname']) ?>
+                  <?= Html::clean($technician['fullname']) ?>
                 </option>
-            <?php endforeach; ?>
-        </select>
+              <?php endforeach; ?>
+            </select>
+          </div>
         <?php endif; ?>
 
-        <label>De:
-            <input type="date" name="date_from" value="<?= Html::cleanInputText($date_from) ?>">
-        </label>
+        <div class="flex flex-col">
+          <label class="text-xs font-medium text-slate-600 mb-1">
+            De
+          </label>
+          <input
+            type="date"
+            name="date_from"
+            value="<?= Html::cleanInputText($date_from) ?>"
+            class="rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-sm 
+                   text-slate-700 focus:outline-none focus:ring-2 focus:ring-brandAccent/60 
+                   focus:border-brandAccent transition">
+        </div>
 
-        <label>Até:
-            <input type="date" name="date_to" value="<?= Html::cleanInputText($date_to) ?>">
-        </label>
+        <div class="flex flex-col">
+          <label class="text-xs font-medium text-slate-600 mb-1">
+            Até
+          </label>
+          <input
+            type="date"
+            name="date_to"
+            value="<?= Html::cleanInputText($date_to) ?>"
+            class="rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-sm 
+                   text-slate-700 focus:outline-none focus:ring-2 focus:ring-brandAccent/60 
+                   focus:border-brandAccent transition">
+        </div>
 
-        <input type="submit" value="Filtrar">
-    </form>
+        <div class="flex flex-col md:ml-auto">
+          <button
+            type="submit"
+            class="inline-flex items-center justify-center rounded-xl bg-brandAccent px-4 py-2.5 
+                   text-sm font-semibold text-white shadow-md shadow-brandAccent/40 
+                   hover:bg-brandAccent/90 hover:-translate-y-[1px] active:translate-y-0 
+                   focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-brandAccent 
+                   transition">
+            🔍 Filtrar
+          </button>
+        </div>
+      </form>
+    </section>
 
-<?php if (!empty($hours)) : ?>
-<div class="table-responsive">
-<table>
-<thead>
-<tr>
-    <th>ID</th>
-    <th>Data</th>
-    <th>Ticket</th>
-    <th>Tempo Total (HH:MM)</th>
-</tr>
-</thead>
-<tbody>
+    <!-- Tabela de horas -->
+    <section class="bg-white rounded-2xl shadow-md shadow-slate-900/5 border border-slate-200 overflow-hidden">
+      <div class="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+        <h2 class="text-sm font-semibold text-slate-800">
+          Lançamentos de horas por ticket
+        </h2>
+        <span class="text-xs text-slate-400">
+          <?= count($hours) ?> registro(s)
+        </span>
+      </div>
 
-<?php foreach ($hours as $line): ?>
-    <?php
-        $sec = intval($line['total_time']);
-        $formatted = formatHours($sec);
-    ?>
-    <tr>
-        <td><?= Html::clean($line['ticket_id']) ?></td>
-        <td><?= date("d/m/Y", strtotime($line['task_date'])) ?></td>
-        <td>
-            <a href="<?= $CFG_GLPI['url_base'] ?>/front/ticket.form.php?id=<?= $line['ticket_id'] ?>">
-                <?= Html::clean($line['ticket_name']) ?>
-            </a>
-        </td>
-        <td><?= $formatted ?></td>
-    </tr>
-<?php endforeach; ?>
+      <?php if (!empty($hours)) : ?>
+        <div class="overflow-x-auto">
+          <table class="min-w-full text-sm text-left text-slate-700">
+            <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th class="px-4 py-3">ID</th>
+                <th class="px-4 py-3">Data</th>
+                <th class="px-4 py-3">Ticket</th>
+                <th class="px-4 py-3 text-right">Tempo total (HH:MM)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php foreach ($hours as $line): ?>
+                <?php
+                  $sec       = intval($line['total_time']); // segundos
+                  $formatted = formatHours($sec);
+                ?>
+                <tr class="odd:bg-white even:bg-slate-50 hover:bg-slate-100/80 transition-colors">
+                  <td class="px-4 py-3 align-top text-slate-600">
+                    <?= Html::clean($line['ticket_id']) ?>
+                  </td>
+                  <td class="px-4 py-3 align-top text-slate-600">
+                    <?= date("d/m/Y", strtotime($line['task_date'])) ?>
+                  </td>
+                  <td class="px-4 py-3 align-top">
+                    <a
+                      href="<?= $CFG_GLPI['url_base'] ?>/front/ticket.form.php?id=<?= $line['ticket_id'] ?>"
+                      class="text-brandDark hover:text-brandAccent font-medium underline-offset-2 hover:underline">
+                      <?= Html::clean($line['ticket_name']) ?>
+                    </a>
+                  </td>
+                  <td class="px-4 py-3 align-top text-right font-semibold text-slate-800">
+                    <?= $formatted ?>
+                  </td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+        </div>
+      <?php else: ?>
+        <div class="px-4 py-10 flex flex-col items-center justify-center text-center">
+          <div class="mb-3 text-3xl">🕒</div>
+          <p class="text-sm font-medium text-slate-700">
+            Nenhum registro encontrado para o período selecionado.
+          </p>
+          <p class="text-xs text-slate-400 mt-1">
+            Ajuste os filtros acima para ver os lançamentos de horas.
+          </p>
+        </div>
+      <?php endif; ?>
+    </section>
 
-</tbody>
-</table>
+  </div>
 </div>
 
-<?php else: ?>
-<p style="text-align:center;color:#888;">Nenhum registro encontrado.</p>
-<?php endif; ?>
-
-</div>
-
-<?php Html::footer(); ?>
+<?php
+Html::footer();
+?>
